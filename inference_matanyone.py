@@ -17,13 +17,15 @@ from matanyone.utils.get_default_model import get_matanyone_model
 import warnings
 warnings.filterwarnings("ignore")
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 @torch.inference_mode()
 @torch.amp.autocast("cuda")
 def main(input_path, mask_path, output_path, ckpt_path, n_warmup=10, r_erode=10, r_dilate=10, suffix="", save_image=False, max_size=-1):
     # download ckpt for the first inference
     pretrain_model_url = "https://github.com/pq-yang/MatAnyone/releases/download/v1.0.0/matanyone.pth"
     ckpt_path = load_file_from_url(pretrain_model_url, 'pretrained_models')
-    
+
     # load MatAnyone model
     matanyone = get_matanyone_model(ckpt_path)
 
@@ -51,7 +53,7 @@ def main(input_path, mask_path, output_path, ckpt_path, n_warmup=10, r_erode=10,
             new_w = int(w / min_side * max_size)
 
         vframes = F.interpolate(vframes, size=(new_h, new_w), mode="area")
-        
+
     # set output paths
     os.makedirs(output_path, exist_ok=True)
     if suffix != "":
@@ -74,7 +76,7 @@ def main(input_path, mask_path, output_path, ckpt_path, n_warmup=10, r_erode=10,
     if r_erode > 0:
         mask = gen_erosion(mask, r_erode, r_erode)
 
-    mask = torch.from_numpy(mask).cuda()
+    mask = torch.from_numpy(mask).to(device)
 
     if max_size > 0:  # resize needed
         mask = F.interpolate(mask.unsqueeze(0).unsqueeze(0), size=(new_h, new_w), mode="nearest")
@@ -88,7 +90,7 @@ def main(input_path, mask_path, output_path, ckpt_path, n_warmup=10, r_erode=10,
         image = vframes[ti]
 
         image_np = np.array(image.permute(1,2,0))       # for output visualize
-        image = (image / 255.).cuda().float()           # for network input
+        image = (image / 255.).to(device).float()           # for network input
 
         if ti == 0:
             output_prob = processor.step(image, mask, objects=objects)      # encode given mask
@@ -105,7 +107,7 @@ def main(input_path, mask_path, output_path, ckpt_path, n_warmup=10, r_erode=10,
         # visualize prediction
         pha = mask.unsqueeze(2).cpu().numpy()
         com_np = image_np / 255. * pha + bgr * (1 - pha)
-        
+
         # DONOT save the warmup frame
         if ti > (n_warmup-1):
             com_np = (com_np*255).astype(np.uint8)
@@ -136,7 +138,7 @@ if __name__ == '__main__':
     parser.add_argument('--save_image', action='store_true', default=False, help='Save output frames. Default: False')
     parser.add_argument('--max_size', type=str, default="-1", help='When positive, the video will be downsampled if min(w, h) exceeds. Default: -1 (means no limit)')
 
-    
+
     args = parser.parse_args()
 
     main(input_path=args.input_path, \

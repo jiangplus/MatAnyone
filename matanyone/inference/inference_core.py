@@ -35,7 +35,8 @@ class InferenceCore:
             network = MatAnyone.from_pretrained(network)
         network.to(device)
         network.eval()
-        self.network = network  
+        self.network = network
+        self.device = device
         cfg = cfg if cfg is not None else network.cfg
         self.cfg = cfg
         self.mem_every = cfg.mem_every
@@ -83,7 +84,7 @@ class InferenceCore:
     def update_config(self, cfg):
         self.mem_every = cfg['mem_every']
         self.memory.update_config(cfg)
-    
+
     def clear_temp_mem(self):
         self.memory.clear_work_mem()
         # self.object_manager = ObjectManager()
@@ -172,13 +173,13 @@ class InferenceCore:
             return torch.zeros((1, key.shape[-2] * 16, key.shape[-1] * 16),
                                device=key.device,
                                dtype=key.dtype)
-        
+
         uncert_output = None
 
         if self.curr_ti == 0: # ONLY for the first frame for prediction
             memory_readout = self.memory.read_first_frame(self.last_msk_value, pix_feat, self.last_mask, self.network, uncert_output=uncert_output)
         else:
-            memory_readout = self.memory.read(pix_feat, key, selection, self.last_mask, self.network, uncert_output=uncert_output, last_msk_value=self.last_msk_value, ti=self.curr_ti, 
+            memory_readout = self.memory.read(pix_feat, key, selection, self.last_mask, self.network, uncert_output=uncert_output, last_msk_value=self.last_msk_value, ti=self.curr_ti,
                                               last_pix_feat=self.last_pix_feat, last_pred_mask=self.last_mask)
         memory_readout = self.object_manager.realize_dict(memory_readout)
 
@@ -198,12 +199,12 @@ class InferenceCore:
         if update_sensory:
             self.memory.update_sensory(sensory, self.object_manager.all_obj_ids)
         return pred_prob_with_bg
-    
+
     def pred_all_flow(self, images):
         self.total_len = images.shape[0]
         images, self.pad = pad_divide_by(images, 16)
         images = images.unsqueeze(0)  # add the batch dimension: (1,t,c,h,w)
-        
+
         self.flows_forward, self.flows_backward = self.network.pred_forward_backward_flow(images)
 
     def encode_all_images(self, images):
@@ -231,15 +232,15 @@ class InferenceCore:
         image: 3*H*W
         mask: H*W (if idx mask) or len(objects)*H*W or None
         objects: list of object ids that are valid in the mask Tensor.
-                The ids themselves do not need to be consecutive/in order, but they need to be 
+                The ids themselves do not need to be consecutive/in order, but they need to be
                 in the same position in the list as the corresponding mask
                 in the tensor in non-idx-mask mode.
-                objects is ignored if the mask is None. 
+                objects is ignored if the mask is None.
                 If idx_mask is False and objects is None, we sequentially infer the object ids.
         idx_mask: if True, mask is expected to contain an object id at every pixel.
                   If False, mask should have multiple channels with each channel representing one object.
         end: if we are at the end of the sequence, we do not need to update memory
-            if unsure just set it to False 
+            if unsure just set it to False
         delete_buffer: whether to delete the image feature buffer after this step
         force_permanent: the memory recorded this frame will be added to the permanent memory
         """
@@ -375,7 +376,7 @@ class InferenceCore:
                              selection,
                              force_permanent=force_permanent,
                              is_deep_update=True)
-        else: # compute self.last_msk_value for non-memory frame 
+        else: # compute self.last_msk_value for non-memory frame
             msk_value, _, _, _ = self.network.encode_mask(
                             image,
                             pix_feat,
@@ -488,8 +489,8 @@ class InferenceCore:
             mask = gen_dilate(mask, r_dilate, r_dilate)
         if r_erode > 0:
             mask = gen_erosion(mask, r_erode, r_erode)
-        
-        mask = torch.from_numpy(mask).cuda()
+
+        mask = torch.from_numpy(mask).to(self.device)
         if max_size > 0:
             mask = F.interpolate(
                 mask.unsqueeze(0).unsqueeze(0), size=(new_h, new_w), mode="nearest"
@@ -503,7 +504,7 @@ class InferenceCore:
         for ti in tqdm(range(length)):
             image = vframes[ti]
             image_np = np.array(image.permute(1, 2, 0))
-            image = (image / 255.0).cuda().float()
+            image = (image / 255.0).to(self.device).float()
 
             if ti == 0:
                 output_prob = self.step(image, mask, objects=objects)
@@ -535,11 +536,11 @@ class InferenceCore:
 
         fgrs = np.array(fgrs)
         phas = np.array(phas)
-        
+
         fgr_filename = f"{output_path}/{video_name}_fgr.mp4"
         alpha_filename = f"{output_path}/{video_name}_pha.mp4"
-        
+
         imageio.mimwrite(fgr_filename, fgrs, fps=fps, quality=7)
         imageio.mimwrite(alpha_filename, phas, fps=fps, quality=7)
-        
+
         return (fgr_filename,alpha_filename)

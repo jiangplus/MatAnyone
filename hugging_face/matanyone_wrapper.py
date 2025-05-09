@@ -5,14 +5,16 @@ import numpy as np
 import random
 import cv2
 
-def gen_dilate(alpha, min_kernel_size, max_kernel_size): 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+def gen_dilate(alpha, min_kernel_size, max_kernel_size):
     kernel_size = random.randint(min_kernel_size, max_kernel_size)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size,kernel_size))
     fg_and_unknown = np.array(np.not_equal(alpha, 0).astype(np.float32))
     dilate = cv2.dilate(fg_and_unknown, kernel, iterations=1)*255
     return dilate.astype(np.float32)
 
-def gen_erosion(alpha, min_kernel_size, max_kernel_size): 
+def gen_erosion(alpha, min_kernel_size, max_kernel_size):
     kernel_size = random.randint(min_kernel_size, max_kernel_size)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size,kernel_size))
     fg = np.array(np.equal(alpha, 255).astype(np.float32))
@@ -41,14 +43,14 @@ def matanyone(processor, frames_np, mask, r_erode=0, r_dilate=0, n_warmup=10):
     if r_erode > 0:
         mask = gen_erosion(mask, r_erode, r_erode)
 
-    mask = torch.from_numpy(mask).cuda()
+    mask = torch.from_numpy(mask).to(device)
 
     frames_np = [frames_np[0]]* n_warmup + frames_np
 
     frames = []
     phas = []
     for ti, frame_single in tqdm.tqdm(enumerate(frames_np)):
-        image = to_tensor(frame_single).cuda().float()
+        image = to_tensor(frame_single).to(device).float()
 
         if ti == 0:
             output_prob = processor.step(image, mask, objects=objects)      # encode given mask
@@ -64,10 +66,10 @@ def matanyone(processor, frames_np, mask, r_erode=0, r_dilate=0, n_warmup=10):
 
         pha = mask.unsqueeze(2).cpu().numpy()
         com_np = frame_single / 255. * pha + bgr * (1 - pha)
-        
+
         # DONOT save the warmup frames
         if ti > (n_warmup-1):
             frames.append((com_np*255).astype(np.uint8))
             phas.append((pha*255).astype(np.uint8))
-    
+
     return frames, phas

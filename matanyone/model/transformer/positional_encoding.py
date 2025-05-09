@@ -40,7 +40,7 @@ class PositionalEncoding(nn.Module):
 
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         """
-        :param tensor: A 4/5d tensor of size 
+        :param tensor: A 4/5d tensor of size
             channel_last=True: (batch_size, h, w, c) or (batch_size, k, h, w, c)
             channel_last=False: (batch_size, c, h, w) or (batch_size, k, c, h, w)
         :return: positional encoding tensor that has the same shape as the input if the input is 4d
@@ -98,8 +98,10 @@ class PositionalEncoding(nn.Module):
 
 
 if __name__ == '__main__':
-    pe = PositionalEncoding(8).cuda()
-    input = torch.ones((1, 8, 8, 8)).cuda()
+    import torch
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    pe = PositionalEncoding(8).to(device)
+    input = torch.ones((1, 8, 8, 8)).to(device)
     output = pe(input)
     # print(output)
     print(output[0, :, 0, 0])
